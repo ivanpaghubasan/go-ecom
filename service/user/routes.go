@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/mux"
+	"github.com/ivanpaghubasan/go-ecom/service/auth"
 	"github.com/ivanpaghubasan/go-ecom/types"
 	"github.com/ivanpaghubasan/go-ecom/utils"
 )
@@ -29,8 +31,15 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 	//* Get JSON payload
 	var payload types.RegisterUserPayload
-	if err := utils.ParseJSON(r, payload); err != nil {
+	if err := utils.ParseJSON(r, &payload); err != nil {
 		utils.WriteError(w, http.StatusBadRequest, err)
+		return
+	}
+	fmt.Println(payload)
+	//* Validate payload
+	if err := utils.Validate.Struct(&payload); err != nil {
+		errors := err.(validator.ValidationErrors)
+		utils.WriteError(w, http.StatusBadRequest, fmt.Errorf("invalid payload %v", errors))
 		return
 	}
 
@@ -41,16 +50,24 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	hashPassword, err := auth.HashPassword(payload.Password)
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, err)
+		return
+	}
+
 	//* If doesn't exist, create new user
 	errCreateUser := h.store.CreateUser(types.User{
 		FirstName: payload.FirstName,
 		LastName:  payload.LastName,
 		Email:     payload.Email,
-		Password:  payload.Password,
+		Password:  hashPassword,
 	})
 
 	if errCreateUser != nil {
 		utils.WriteError(w, http.StatusInternalServerError, err)
 		return
 	}
+
+	utils.WriteJSON(w, http.StatusCreated, nil)
 }
